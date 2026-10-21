@@ -1,0 +1,211 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h> 
+#include <assert.h>
+#include "rainbow.h"
+#include <unistd.h>
+#include <pthread.h>
+const int MAX_ITERATIONS = 256; // Definition d'une constante 
+   
+
+typedef struct { // Definition de la structure complex_s
+  double re;
+  double im;
+} complex_s;
+
+typedef struct{ // Definition de la structure image_s
+  unsigned int width;
+  unsigned int height;
+  complex_s ul;
+  complex_s br;
+  unsigned int * bitmap;
+}image_s;
+
+typedef struct{// Definition de la structure param_s
+  unsigned int start;
+  unsigned int end;
+  image_s image;
+}param_s;
+
+void conjugate(complex_s c, complex_s *res) { // Retourne le conjugué de c avec le pointeur res
+  
+  // Copie des parties réelle et imaginaire de c dans res
+  res->re = c.re;
+  res->im = -c.im;  // Changer le signe de la partie imaginaire pour obtenir le conjugué
+}
+void sum(complex_s c1, complex_s c2, complex_s *res) { // Retourne la somme de deux complexes
+    res->re = c1.re + c2.re;
+    res->im = c1.im + c2.im;
+  }
+
+void diff(complex_s c1, complex_s c2, complex_s *res) { // Retourne la différence entre 2 complexes
+    res->re = c1.re - c2.re;
+    res->im = c1.im - c2.im;
+  }
+
+void prod(complex_s c1, complex_s c2,complex_s *res) { // Retourne le produit de 2 complexes
+ res->re = c1.re * c2.re - c1.im * c2.im;
+res->im = c1.re * c2.im + c1.im * c2.re;
+
+} 
+
+void square(complex_s c, complex_s *res){
+    res->re = c.re * c.re - c.im*c.im;
+    res->im = c.im * c.re + c.im *c.re;
+}
+
+int mandelbrot(complex_s c){ // Retourne l'indice n si le carré de la partie réel + partie imaginaire de la suite z > 4 sinon MAX_ITERATIONS
+    complex_s z = {0, 0};
+    int n;
+
+    for (n = 1; n <= MAX_ITERATIONS -1; ++n) {
+        square(z, &z);
+        sum(z, c, &z);
+
+        if ((z.re * z.re + z.im * z.im) > 4.0) {
+            return n;
+        }
+    }
+
+    return MAX_ITERATIONS;
+}     
+ 
+void build_image_rgba(image_s image) { // Crée un fichier, et recopie les élements du tableau bitmap dans ce fichier
+  FILE *file = fopen("mandelbrot.rgba", "wb");
+
+  if (file == NULL) {
+    perror("Error opening file");
+    exit(EXIT_FAILURE);
+  }
+
+  // unsigned int white_pixel = 0xFFFFFFFF; (Pour avoir une image blanche)
+  //  for (unsigned int i = 0; i < image.width * image.height; i++) {
+  //  image.bitmap[i] = white_pixel;
+  // }
+  
+  fwrite(image.bitmap, sizeof(unsigned int), image.width * image.height, file);
+  fclose(file);
+}
+
+/*void mandelbrot_colors(image_s *image){
+  int x,y;
+  float re_part, im_part;
+  double x_scale = (image->br.re - image->ul.re)/image->width;
+  double y_scale = (image->br.im - image->ul.im)/image->height;
+  for(x=0; x<image->width;x++){
+    for (y=0; y<image->height;y++){
+      re_part = image->ul.re + x*x_scale;
+      im_part = image->ul.im + y*y_scale;
+      complex_s z = {re_part,im_part};
+      int n = mandelbrot(z);
+      image->bitmap[y*image->width + x] = rainbow_table[(n)% 256];
+    }
+  }
+}
+*/
+
+void *mandelbrot_colors_partial(void *param){
+  param_s *p = (param_s *)param;
+  
+  int x,y;
+  float re_part, im_part;
+  double x_scale = (p->image.ul.re - p->image.br.re)/p->image.width;
+  double y_scale = (p->image.ul.im - p->image.br.im)/p->image.height;
+  for(x=0;x<p->image.width;x++){
+    for (y = p->start; y < p->end; y++) {
+      re_part = p->image.ul.re + x*x_scale;
+      im_part = p->image.br.im + y*y_scale;
+      complex_s z = {re_part,im_part};
+      int n = mandelbrot(z);
+      p->image.bitmap[y*p->image.width + x] = rainbow_table[(n)% 256];
+  
+    }
+  }
+}
+
+
+
+int main(int arg, char **argv) {
+printf("Projet Mandelbrot\n");
+
+/*complex_s e1;
+ e1.re = 1;
+ e1.im = 2;  
+ printf("e1 : %f +  %f i. \n", e1.re,  e1.im);
+
+complex_s e2 = {2.0, 5.0};
+complex_s res;
+
+ conjugate(e2, &res);  
+ printf("Le conjugué de e2 est  : %f + %f i\n", res.re, res.im);
+
+ sum(e1,e2,&res);
+ printf("La somme de e1 et e2 = %f + %f i\n", res.re, res.im);
+
+ diff(e1,e2,&res);
+ printf("La différence de e1 et e2 = %f + %f i\n", res.re, res.im);
+
+ prod(e1,e2,&res);
+ printf("Le produit de e1 et e2 = %f + %f i\n", res.re, res.im);
+
+ square(e2, &res);  
+ printf("Le carré de e2 est  : %f + %f i\n", res.re, res.im);
+
+
+complex_s c = {0 ,0};
+assert ( mandelbrot (c)== MAX_ITERATIONS);
+ c.re = 2; c.im = 2;
+ assert ( mandelbrot (c)==1);
+ c.re = 0.3; c.im = 0;
+ assert ( mandelbrot (c)==12);
+ c.re = 0.25018; c.im =0;
+ assert ( mandelbrot (c)==232);
+ c.re = 1; c.im = 1;
+ assert ( mandelbrot (c)==2);
+*/
+ 
+image_s my_mandelbrot;
+  my_mandelbrot.width = 3840;
+  my_mandelbrot.height = 2160;
+  my_mandelbrot.ul = (complex_s){-2, -1};
+  my_mandelbrot.br = (complex_s){1, 1};
+  my_mandelbrot.bitmap = (unsigned int *)malloc(my_mandelbrot.width * my_mandelbrot.height * sizeof(unsigned int));
+
+  if (my_mandelbrot.bitmap == NULL) {
+    perror("Error allocating memory");
+    return EXIT_FAILURE;
+  }
+  
+  // mandelbrot_colors(&my_mandelbrot);
+  //build_image_rgba(my_mandelbrot);
+  free(my_mandelbrot.bitmap);
+
+  int nb_proc = sysconf(_SC_NPROCESSORS_ONLN);
+  pthread_t pth[nb_proc];
+  param_s params[nb_proc];
+
+  /*param_s p1;
+  p1.start = (complex_s){-2;-1};
+  p1.end = (complex_s){;};
+  p1.image = my_mandelbrot;
+  */
+  
+  for(int i=0; i<nb_proc;i++){
+    params[i].start = (my_mandelbrot.height)*i/nb_proc;
+    params[i].end = (my_mandelbrot.width)*i/nb_proc;
+    params[i].image = my_mandelbrot;
+    pthread_create(&pth[i], NULL, mandelbrot_colors_partial, (void *)&params[i]);
+  }
+
+    for(int i=0; i<nb_proc;i++){
+    pthread_join(pth[i], NULL);
+  }
+  
+  
+  return 0;
+}
+
+
+
+
+

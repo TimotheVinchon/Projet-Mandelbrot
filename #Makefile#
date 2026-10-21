@@ -1,0 +1,13 @@
+#Makefile - C
+CFLAGS=-Wall  -g -02
+EXE=mandelbrot
+NOM=Vinchon_Projet_Mandelbrot
+
+.PHONY : clear
+
+$(EXE) : $(NOM).c rainbow.h
+	gcc -o $@ $(NOM).c -lm
+	./$(EXE)
+	$ convert -size 3840x2160 -depth 8 $(EXE).rgba $(EXE).jpg
+clear :
+	rm exe $(NOM).o *~
